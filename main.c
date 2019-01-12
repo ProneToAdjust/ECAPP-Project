@@ -42,6 +42,8 @@ int passwordauth(void);
 
 char buff[10];
 int result;
+int delayCount = 0;
+int keyPressed = 0;
 unsigned char i, LCD_TEMP;
 char clear[] = "                ";
 char sevenseglookup[10] = {0b1000000, 0b1111001, 0b0100100, 0b0110000, 0b0011001, 0b0010010, 0b0000010, 0b1111000, 0b0000000, 0b0010000};
@@ -60,6 +62,14 @@ void main(void) {
     CCPR2L = 11111101; // CCPR1L:CCP1CON<5:4> = 500
     CCP2CON = 0b00001111; // DC1B1 & DC1B0 = 0, PWM mode
     while(1){
+        if(delayCount == 30) {
+            delayCount = 0;
+            for (i = 0; i < 16; i++)
+                chararray[i] = '\0'; // Clear char array
+            cacount = 0; // Reset char array counter
+            __delay_ms(1000);
+            clearlineone(); // Clear line one
+        }
     }
 }
 
@@ -91,6 +101,13 @@ void initialisepb(void){
     TMR0IF=0;
     TMR0IE=1;
     
+    TMR3IP = 0;
+    T3CON = 0b10110000;
+    TMR3H = 0x0B;
+    TMR3L = 0xDC;
+    TMR3IF = 0;
+    TMR3IE = 1;
+    
     GIE=1;
     GIEL=1;
 }
@@ -114,6 +131,8 @@ if (INT0IF) { // Check INT0 flag
     W_ctr_4bit(0b00000010); 
     
     if(kpinput == 'E' || kpinput == 'C'){ // 
+        TMR3ON = 0;
+        keyPressed = 0;
         
         if(kpinput == 'E'){ // If input is 'E' 
             int boolean = passwordauth(); // Authenticate password
@@ -134,6 +153,14 @@ if (INT0IF) { // Check INT0 flag
         clearlineone();  // Clear line one
     }
     else{
+        if(keyPressed == 0)
+        {
+            TMR3ON = 1;
+            TMR3H = 0x0B;
+            TMR3L = 0xDC;
+            delayCount = 0;
+            keyPressed = 1;
+        }
         chararray[cacount] = kpinput; // Add input to char array
         displaymsg(chararray); // Update LCD display with input
         cacount++; // Increment char array counter
@@ -158,6 +185,12 @@ else if (TMR0IF){ // Check TMR0IF flag
         }
      
      TMR0IF = 0; // Clear interrupt flag
+}
+else if (TMR3IF) {
+    delayCount++;
+    TMR3H = 0x0B;
+    TMR3L = 0xDC;
+    TMR3IF = 0;
 }
 }
 
