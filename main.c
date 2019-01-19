@@ -39,11 +39,15 @@ void clearlinetwo(void);
 void display7seg(char s7);
 void displaytwo7seg1cyc(char tdnum);
 int passwordauth(void);
+void displaysevenseg(int);
 
 char buff[10];
 int result;
 int delayCount = 0;
 int keyPressed = 0;
+int count = 0;
+int tmr3Count = 0;
+int tmr3toggle = 0;
 unsigned char i, LCD_TEMP;
 char clear[] = "                ";
 char sevenseglookup[10] = {0b1000000, 0b1111001, 0b0100100, 0b0110000, 0b0011001, 0b0010010, 0b0000010, 0b1111000, 0b0000000, 0b0010000};
@@ -62,13 +66,16 @@ void main(void) {
     CCPR2L = 11111101; // CCPR1L:CCP1CON<5:4> = 500
     CCP2CON = 0b00001111; // DC1B1 & DC1B0 = 0, PWM mode
     while(1){
-        if(delayCount == 30) {
+        if(delayCount > 15) { //if 15 sec passed, clear lcd reset password and stop count
+            TMR3ON = 0;
+            keyPressed = 0;
             delayCount = 0;
             for (i = 0; i < 16; i++)
                 chararray[i] = '\0'; // Clear char array
             cacount = 0; // Reset char array counter
-            __delay_ms(1000);
             clearlineone(); // Clear line one
+            PORTEbits.RE0 = 1;
+            PORTD = 0b10000000;
         }
     }
 }
@@ -102,14 +109,16 @@ void initialisepb(void){
     TMR0IE=1;
     
     TMR3IP = 0;
-    T3CON = 0b10110000;
-    TMR3H = 0x0B;
-    TMR3L = 0xDC;
+    T3CON = 0b10000000;
+    TMR3H = 0xEC;
+    TMR3L = 0x78;
     TMR3IF = 0;
     TMR3IE = 1;
     
     GIE=1;
     GIEL=1;
+    
+    PORTCbits.RC1 = 0;
 }
 
 void Init_LCD(){ /* LCD display initialization */
@@ -129,22 +138,23 @@ if (INT0IF) { // Check INT0 flag
     
     char kpinput = keypadarray[KEYPAD]; // Get keypad input
     W_ctr_4bit(0b00000010); 
-    
     if(kpinput == 'E' || kpinput == 'C'){ // 
         TMR3ON = 0;
         keyPressed = 0;
+        PORTEbits.RE0 = 1;
+        PORTD = 0b10000000;
         
         if(kpinput == 'E'){ // If input is 'E' 
             int boolean = passwordauth(); // Authenticate password
             if(boolean){ // Check if password is correct
-                displaymsg("pw correct");   
+                displaymsg("pw correct      ");   //16 chars to clear
             }
             else{ // Password is wrong
-                displaymsg("pw wrong");
+                displaymsg("pw wrong        ");  //16 chars to clear
             }
         }
         else
-            displaymsg("cleared");
+            displaymsg("cleared         "); //16 chars to clear
         
         for (i = 0; i<16 ; i++)
             chararray[i]= '\0'; // Clear char array
@@ -153,12 +163,14 @@ if (INT0IF) { // Check INT0 flag
         clearlineone();  // Clear line one
     }
     else{
-        if(keyPressed == 0)
+        if(keyPressed == 0) //start timer on 1st key press
         {
             TMR3ON = 1;
-            TMR3H = 0x0B;
-            TMR3L = 0xDC;
+            TMR3H = 0xEC;
+            TMR3L = 0x78;
             delayCount = 0;
+            tmr3Count = 0;
+            count = 15; // set timer to 15 sec count
             keyPressed = 1;
         }
         chararray[cacount] = kpinput; // Add input to char array
@@ -187,9 +199,18 @@ else if (TMR0IF){ // Check TMR0IF flag
      TMR0IF = 0; // Clear interrupt flag
 }
 else if (TMR3IF) {
-    delayCount++;
-    TMR3H = 0x0B;
-    TMR3L = 0xDC;
+    tmr3toggle = !tmr3toggle; //toggle between displaying num on 7seg
+    if(keyPressed) {
+        displaysevenseg(tmr3toggle); //display num on 7seg
+    }
+    tmr3Count++;
+    if(tmr3Count == 200) { //reduce count by 1 after 200 tmr3 overflow interrupts
+        delayCount++;
+        tmr3Count = 0;
+        count = 15 - delayCount;
+    }
+    TMR3H = 0xEC;
+    TMR3L = 0x78;
     TMR3IF = 0;
 }
 }
@@ -200,7 +221,7 @@ LCD_RS = 0; // Logic ?0?
 LCD_TEMP = x; // Store control word
 //LCD_TEMP >> 4 // send upper nibble of control word
 LCD_E = 1; // Logic ?1?
-LCD_DATA = LCD_TEMP;
+LCD_DATA = LCD_TEMP  & 0b11110000;
 _delay(1000); // 1ms delay
 LCD_E = 0; // Logic ?0?
 _delay(1000); // 1ms delay
@@ -241,6 +262,18 @@ void delayms(unsigned int ms) {
 void delaysec(int sec) {
     for (int secloop = 0; secloop < sec; secloop++) {
         for (int d = 0; d < 1000; d++)_delay(1000);
+    }
+}
+
+void displaysevenseg(int toggle) {
+    if(toggle == 1) { //display num on 1st 7seg
+        if((count/10) > 0) {
+            PORTEbits.RE0 = 1;
+            PORTD = sevenseglookup[count/10] & 0b11111111;
+        }
+    } else { //display num on 2nd 7seg
+        PORTEbits.RE0 = 0;
+        PORTD = sevenseglookup[count%10] | 0b10000000;
     }
 }
 
