@@ -48,6 +48,8 @@ int keyPressed = 0;
 int count = 0;
 int tmr3Count = 0;
 int tmr3toggle = 0;
+int tmr2_count = 0;
+int tmr2_tone_var = 0;
 unsigned char i, LCD_TEMP;
 char clear[] = "                ";
 char sevenseglookup[10] = {0b1000000, 0b1111001, 0b0100100, 0b0110000, 0b0011001, 0b0010010, 0b0000010, 0b1111000, 0b0000000, 0b0010000};
@@ -61,17 +63,18 @@ char password[16] = {'0', '3', '1', '0', '2', '0', '\0', '\0', '\0', '\0', '\0',
 
 void main(void) {
     initialisepb();//delete this, commit sudoku
-    T2CON = 0b00000101; // Timer 2 On, postscaler = 1:1, prescaler = 1:4
-    PR2 = 249; // Set PR2 = 249 for 1ms
-    CCPR2L = 11111101; // CCPR1L:CCP1CON<5:4> = 500
-    CCP2CON = 0b00001111; // DC1B1 & DC1B0 = 0, PWM mode
+    
     while(1){
+        
         if(delayCount > 15) { //if 15 sec passed, clear lcd reset password and stop count
+            
             TMR3ON = 0;
             keyPressed = 0;
             delayCount = 0;
+            
             for (i = 0; i < 16; i++)
                 chararray[i] = '\0'; // Clear char array
+            
             cacount = 0; // Reset char array counter
             clearlineone(); // Clear line one
             PORTEbits.RE0 = 1;
@@ -81,6 +84,7 @@ void main(void) {
 }
 
 void initialisepb(void){
+    
     ADCON1 =0X0F;
     TRISA = 0b11011111;
     TRISB =0b11111111;
@@ -115,6 +119,15 @@ void initialisepb(void){
     TMR3IF = 0;
     TMR3IE = 1;
     
+    T2CON = 0b00000111; // Timer 2 On, postscaler = 1:1, prescaler = 1:16
+    PR2 = 62; // Set PR2 = 62 for 1ms
+    TMR2IF = 0;
+    TMR2IE = 1;
+    TMR2IP = 0;
+    
+    CCPR2L = 0b00000110; // CCPR2L:CCP2CON<5:4> = 25
+    CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode 
+    
     GIE=1;
     GIEL=1;
     
@@ -122,49 +135,81 @@ void initialisepb(void){
 }
 
 void Init_LCD(){ /* LCD display initialization */
-// Special Sequence a) to d) required for 4-bit interface
-_delay(15); // a) 15ms LCD power-up delay
-W_ctr_4bit(0x03); // b) Function Set (DB4-DB7: 8-bit interface)
-_delay(5); // c) 5ms delay
-W_ctr_4bit(0x02); // d) Function Set (DB4-DB7: 4-bit interface)
-W_ctr_4bit(0b00101000); // Function Set - 4-bit, 2 lines, 5X7
-W_ctr_4bit(0b00001100); // Display on, cursor off
-W_ctr_4bit(0b00000110); // Entry mode - inc addr, no shift
-W_ctr_4bit(0b00000001); // Clear display & home position
+    
+    // Special Sequence a) to d) required for 4-bit interface
+    _delay(15); // a) 15ms LCD power-up delay
+    W_ctr_4bit(0x03); // b) Function Set (DB4-DB7: 8-bit interface)
+    _delay(5); // c) 5ms delay
+    W_ctr_4bit(0x02); // d) Function Set (DB4-DB7: 4-bit interface)
+    W_ctr_4bit(0b00101000); // Function Set - 4-bit, 2 lines, 5X7
+    W_ctr_4bit(0b00001100); // Display on, cursor off
+    W_ctr_4bit(0b00000110); // Entry mode - inc addr, no shift
+    W_ctr_4bit(0b00000001); // Clear display & home position
 }
 
 void interrupt ISR(void){
+    
 if (INT0IF) { // Check INT0 flag
     
     char kpinput = keypadarray[KEYPAD]; // Get keypad input
     W_ctr_4bit(0b00000010); 
+    
     if(kpinput == 'E' || kpinput == 'C'){ // 
+        
         TMR3ON = 0;
         keyPressed = 0;
         PORTEbits.RE0 = 1;
         PORTD = 0b10000000;
         
         if(kpinput == 'E'){ // If input is 'E' 
+            
             int boolean = passwordauth(); // Authenticate password
+            
             if(boolean){ // Check if password is correct
+                
                 displaymsg("pw correct      ");   //16 chars to clear
+                
+                tmr2_tone_var = 1;
+                
+                PR2 = 62; // Set PR2 = 62 for 1ms
+                TMR2IF = 0;
+                TMR2IE = 1;
+                TMR2IP = 0;
+                CCPR1L = 0b00011111; // CCPR1L:CCP1CON = 125 
+                CCP1CON = 0b00011111; // DC1B1 = 0, DC1B0 = 1, PWM mode
             }
+            
             else{ // Password is wrong
+                
                 displaymsg("pw wrong        ");  //16 chars to clear
+                
+                tmr2_tone_var = 2;
+                
+                PR2 = 249; // Set PR2 = 249 for 4ms period
+                TMR2IF = 0;
+                TMR2IE = 1;
+                TMR2IP = 0;
+                CCPR1L = 0b01111101; // CCPR1L:CCP1CON = 500 
+                CCP1CON = 0b00001111; // DC1B1(Bit 5) & DC1B0(Bit 4) = 0, PWM mode
+                
             }
         }
-        else
+        else{
+            
             displaymsg("cleared         "); //16 chars to clear
+        }
         
         for (i = 0; i<16 ; i++)
             chararray[i]= '\0'; // Clear char array
+        
         cacount = 0; // Reset char array counter
         __delay_ms(1000);
         clearlineone();  // Clear line one
     }
     else{
-        if(keyPressed == 0) //start timer on 1st key press
-        {
+        
+        if(keyPressed == 0){ //start timer on 1st key press
+        
             TMR3ON = 1;
             TMR3H = 0xEC;
             TMR3L = 0x78;
@@ -173,46 +218,106 @@ if (INT0IF) { // Check INT0 flag
             count = 15; // set timer to 15 sec count
             keyPressed = 1;
         }
+        
         chararray[cacount] = kpinput; // Add input to char array
         displaymsg(chararray); // Update LCD display with input
         cacount++; // Increment char array counter
     }
+    
     INT0IF = 0; // Clear interrupt flag
 }
+
 else if (INT1IF){ // Check INT1 flag
+    
     TMR0H=0x67; // Reload timer0
     TMR0L=0x69;
-    CCP2CON = 0b1111; // Enable pwm 
+    
+    CCPR2L = 0b00011111; // CCPR2L:CCP2CON<5:4> = 125
+    CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode
+    
     INT1IF = 0; // Clear interrupt flag
 }
+
 else if (TMR0IF){ // Check TMR0IF flag
      
     if(SW1 == 0){ // Check if SW1 is up
+        
         TMR0H=0x67; // Reload timer0
         TMR0L=0x69;
-        CCP2CON = 0b1111; // Enable pwm
         }
-    else{ // SW1 is down
-        CCP2CON = 0b0000; // Disable pwm
+    
+    else{         // SW1 is down
+        
+        CCPR2L = 0b00000110; // CCPR2L:CCP2CON<5:4> = 25
+        CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode 
         }
      
      TMR0IF = 0; // Clear interrupt flag
 }
+
+else if (TMR2IF){
+    
+    if(tmr2_tone_var == 1){
+        
+        if(tmr2_count == 500){
+            
+            tmr2_tone_var = 0;
+            tmr2_count = 0;
+            CCP1CON = 0b0000;
+        }
+        
+        else
+        tmr2_count++;
+    }
+    
+    else if(tmr2_tone_var == 2){
+        
+        if(tmr2_count == 50){
+            
+            PR2 = 62; // Set PR2 = 62 for 1ms
+            CCP1CON = 0b0000;
+        }
+        
+        else if(tmr2_count == 100){
+            
+            CCP1CON = 0b1111;
+        }
+        
+        else if(tmr2_count == 25){
+            
+            PR2 = 62; // Set PR2 = 62 for 1ms
+            tmr2_tone_var = 0;
+            tmr2_count = 0;
+            CCP1CON = 0b0000;
+        }
+        
+        else
+        tmr2_count++;
+    }
+    
+    TMR2IF = 0;
+}
+
 else if (TMR3IF) {
+    
     tmr3toggle = !tmr3toggle; //toggle between displaying num on 7seg
+    
     if(keyPressed) {
         displaysevenseg(tmr3toggle); //display num on 7seg
     }
     tmr3Count++;
+    
     if(tmr3Count == 200) { //reduce count by 1 after 200 tmr3 overflow interrupts
         delayCount++;
         tmr3Count = 0;
         count = 15 - delayCount;
     }
+    
     TMR3H = 0xEC;
     TMR3L = 0x78;
     TMR3IF = 0;
 }
+
 }
 
 void W_ctr_4bit(char x){
