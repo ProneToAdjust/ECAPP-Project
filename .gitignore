@@ -52,3 +52,11 @@ build/default/production/main.pre
 build/default/production/main.p1
 build/default/debug/main.pre
 build/default/debug/main.p1
+nbproject/private/private.xml
+nbproject/private/configurations.xml
+dist/default/production/memoryfile.xml
+dist/default/debug/memoryfile.xml
+build/default/production/main.pre
+build/default/production/main.p1
+build/default/debug/main.pre
+build/default/debug/main.p1

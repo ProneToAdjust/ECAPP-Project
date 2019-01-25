@@ -12,8 +12,6 @@
 //#pragma config MCLRE = OFF
 
 #include <xc.h>
-#include <stdlib.h>
-#include <p18f4520.h>
 
 #define _XTAL_FREQ 4000000
 #define LCD_DATA PORTC
@@ -48,8 +46,10 @@ int keyPressed = 0;
 int count = 0;
 int tmr3Count = 0;
 int tmr3toggle = 0;
-int tmr2_count = 0;
-int tmr2_tone_var = 0;
+int bulb_state = 0; // bulb state 0 = dim, 1 = bright
+int spkrCount = 0;
+int pwCorrect = 0;
+int stopSpeaker = 0;
 unsigned char i, LCD_TEMP;
 char clear[] = "                ";
 char sevenseglookup[10] = {0b1000000, 0b1111001, 0b0100100, 0b0110000, 0b0011001, 0b0010010, 0b0000010, 0b1111000, 0b0000000, 0b0010000};
@@ -112,6 +112,13 @@ void initialisepb(void){
     TMR0IF=0;
     TMR0IE=1;
     
+//    TMR1IP = 0;
+//    T1CON = 0b11001100;
+//    TMR1H = 0xFE;
+//    TMR1L = 0x0C;
+//    TMR1IF = 0;
+//    TMR1IE = 1;
+    
     TMR3IP = 0;
     T3CON = 0b10000000;
     TMR3H = 0xEC;
@@ -164,41 +171,24 @@ if (INT0IF) { // Check INT0 flag
         if(kpinput == 'E'){ // If input is 'E' 
             
             int boolean = passwordauth(); // Authenticate password
-            
+            TMR3ON = 1;
             if(boolean){ // Check if password is correct
-                
+                pwCorrect = 1;
+                TMR3H = 0xFE;
+                TMR3L = 0x0C;
                 displaymsg("pw correct      ");   //16 chars to clear
-                
-                tmr2_tone_var = 1;
-                
-                PR2 = 62; // Set PR2 = 62 for 1ms
-                TMR2IF = 0;
-                TMR2IE = 1;
-                TMR2IP = 0;
-                CCPR1L = 0b00011111; // CCPR1L:CCP1CON = 125 
-                CCP1CON = 0b00011111; // DC1B1 = 0, DC1B0 = 1, PWM mode
             }
             
             else{ // Password is wrong
-                
+                pwCorrect = 2;
+                TMR3H = 0xFE;
+                TMR3L = 0x0C;
                 displaymsg("pw wrong        ");  //16 chars to clear
-                
-                tmr2_tone_var = 2;
-                
-                PR2 = 249; // Set PR2 = 249 for 4ms period
-                TMR2IF = 0;
-                TMR2IE = 1;
-                TMR2IP = 0;
-                CCPR1L = 0b01111101; // CCPR1L:CCP1CON = 500 
-                CCP1CON = 0b00001111; // DC1B1(Bit 5) & DC1B0(Bit 4) = 0, PWM mode
-                
             }
         }
         else{
-            
             displaymsg("cleared         "); //16 chars to clear
         }
-        
         for (i = 0; i<16 ; i++)
             chararray[i]= '\0'; // Clear char array
         
@@ -206,7 +196,7 @@ if (INT0IF) { // Check INT0 flag
         __delay_ms(1000);
         clearlineone();  // Clear line one
     }
-    else{
+    else if (cacount < 16) {
         
         if(keyPressed == 0){ //start timer on 1st key press
         
@@ -229,11 +219,32 @@ if (INT0IF) { // Check INT0 flag
 
 else if (INT1IF){ // Check INT1 flag
     
-    TMR0H=0x67; // Reload timer0
-    TMR0L=0x69;
+//    TMR0H=0x67; // Reload timer0
+//    TMR0L=0x69;
     
-    CCPR2L = 0b00011111; // CCPR2L:CCP2CON<5:4> = 125
-    CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode
+    //CCPR2L = 0b00011111; // CCPR2L:CCP2CON<5:4> = 125
+    //CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode
+    
+    if(bulb_state == 1){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+        }
+        
+    else if(bulb_state == 0){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+            
+            for(int x = 0;x < 24;x++){//brighten bulb
+                
+               CCPR2L++;
+               _delay(10000);
+            }
+            
+            bulb_state = 1;
+            
+        }
     
     INT1IF = 0; // Clear interrupt flag
 }
@@ -242,79 +253,98 @@ else if (TMR0IF){ // Check TMR0IF flag
      
     if(SW1 == 0){ // Check if SW1 is up
         
-        TMR0H=0x67; // Reload timer0
-        TMR0L=0x69;
+        //TMR0H=0x67; // Reload timer0
+        //TMR0L=0x69;
+        
+        if(bulb_state == 1){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+            }
+        
+        else if(bulb_state == 0){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+            
+//            for(int x = 0;x < 24;x++){//dim bulb
+//                
+//               CCPR2L--;
+//               _delay(1000);
+//               }
+//            
+//            bulb_state = 0;
+            
+            }
+        
         }
     
     else{         // SW1 is down
         
-        CCPR2L = 0b00000110; // CCPR2L:CCP2CON<5:4> = 25
-        CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode 
+        //CCPR2L = 0b00000110; // CCPR2L:CCP2CON<5:4> = 25
+        //CCP2CON = 0b00011111; // DC2B1 = 0, DC2B0 = 1, PWM mode 
+        
+        if(bulb_state == 1){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+            
+            for(int x = 0;x < 24;x++){//dim bulb
+                
+               CCPR2L--;
+               _delay(10000);
+               }
+            
+            bulb_state = 0;
+        }
+        
+        else if(bulb_state == 0){
+            
+            TMR0H=0x67; // Reload timer0
+            TMR0L=0x69;
+        }
+        
         }
      
      TMR0IF = 0; // Clear interrupt flag
 }
 
-else if (TMR2IF){
-    
-    if(tmr2_tone_var == 1){
-        
-        if(tmr2_count == 500){
-            
-            tmr2_tone_var = 0;
-            tmr2_count = 0;
-            CCP1CON = 0b0000;
-        }
-        
-        else
-        tmr2_count++;
-    }
-    
-    else if(tmr2_tone_var == 2){
-        
-        if(tmr2_count == 50){
-            
-            PR2 = 62; // Set PR2 = 62 for 1ms
-            CCP1CON = 0b0000;
-        }
-        
-        else if(tmr2_count == 100){
-            
-            CCP1CON = 0b1111;
-        }
-        
-        else if(tmr2_count == 25){
-            
-            PR2 = 62; // Set PR2 = 62 for 1ms
-            tmr2_tone_var = 0;
-            tmr2_count = 0;
-            CCP1CON = 0b0000;
-        }
-        
-        else
-        tmr2_count++;
-    }
-    
-    TMR2IF = 0;
-}
-
 else if (TMR3IF) {
-    
-    tmr3toggle = !tmr3toggle; //toggle between displaying num on 7seg
-    
-    if(keyPressed) {
-        displaysevenseg(tmr3toggle); //display num on 7seg
+    if(pwCorrect) {
+        if(pwCorrect == 1) {
+            SPEAKER = ~SPEAKER;
+        } else {
+            spkrCount++;
+            if(spkrCount == 4) {
+                spkrCount = 0;
+                SPEAKER = ~SPEAKER;
+            }
+        }
+        stopSpeaker++;
+        if(stopSpeaker == 1000) {
+            TMR3ON = 0;
+            stopSpeaker = 0;
+            pwCorrect = 0;
+        }
+        TMR3H = 0xFE;
+        TMR3L = 0x0C;
+    } else {
+        tmr3toggle = !tmr3toggle; //toggle between displaying num on 7seg
+
+        if(keyPressed) {
+            displaysevenseg(tmr3toggle); //display num on 7seg
+        }
+        tmr3Count++;
+
+        if(tmr3Count == 200) { //reduce count by 1 after 200 tmr3 overflow interrupts
+            delayCount++;
+            tmr3Count = 0;
+            count = 15 - delayCount;
+        }
+
+        TMR3H = 0xEC;
+        TMR3L = 0x78;
     }
-    tmr3Count++;
-    
-    if(tmr3Count == 200) { //reduce count by 1 after 200 tmr3 overflow interrupts
-        delayCount++;
-        tmr3Count = 0;
-        count = 15 - delayCount;
-    }
-    
-    TMR3H = 0xEC;
-    TMR3L = 0x78;
     TMR3IF = 0;
 }
 
